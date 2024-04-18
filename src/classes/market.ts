@@ -86,7 +86,8 @@ export class KaminoMarket {
     connection: Connection,
     marketAddress: PublicKey,
     programId: PublicKey = PROGRAM_ID,
-    setupLocalTest: boolean = false
+    setupLocalTest: boolean = false,
+    withReserves: boolean = true
   ) {
     const market = await LendingMarket.fetch(connection, marketAddress, programId);
 
@@ -100,7 +101,10 @@ export class KaminoMarket {
       scope = new Scope('localnet', connection);
     }
 
-    const reserves = await getReservesForMarket(marketAddress, connection, programId);
+    const reserves = withReserves
+      ? await getReservesForMarket(marketAddress, connection, programId)
+      : new Map<PublicKey, KaminoReserve>();
+
     return new KaminoMarket(connection, market, marketAddress.toString(), reserves, scope, programId);
   }
 
