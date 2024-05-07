@@ -1,6 +1,6 @@
 {
   "name": "@kamino-finance/klend-sdk",
-  "version": "2.10.7",
+  "version": "2.10.8",
   "description": "Typescript SDK for interacting with the Kamino Lending (klend) protocol",
   "repository": {
     "type": "git",
@@ -45,6 +45,7 @@
     "@hubbleprotocol/farms-sdk": "^0.3.7",
     "@hubbleprotocol/kamino-sdk": "^3.0.16",
     "@hubbleprotocol/scope-sdk": "^3.0.6",
+    "@mongodb-js/zstd": "^1.2.0",
     "@pythnetwork/client": "^2.5.1",
     "@solana/buffer-layout": "^4.0.0",
     "@solana/spl-token": "^0.1.8",
@@ -56,8 +57,7 @@
     "buffer-layout": "^1.2.2",
     "commander": "^9.3.0",
     "decimal.js": "^10.4.3",
-    "exponential-backoff": "^3.1.1",
-    "@mongodb-js/zstd": "^1.2.0"
+    "exponential-backoff": "^3.1.1"
   },
   "devDependencies": {
     "@jup-ag/core": "=3.0.0-beta.18",
