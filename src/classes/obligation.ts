@@ -339,7 +339,7 @@ export class KaminoObligation {
     let borrowPosition: Position | undefined = undefined;
     for (const oldBorrow of oldBorrows.values()) {
       if (oldBorrow.mintAddress.equals(mint)) {
-        borrowPosition = oldBorrow;
+        borrowPosition = { ...oldBorrow };
       }
     }
     let reserve: KaminoReserve | undefined = undefined;
@@ -408,7 +408,7 @@ export class KaminoObligation {
     let depositPosition: Position | undefined = undefined;
     for (const oldDeposit of oldDeposits.values()) {
       if (oldDeposit.mintAddress.equals(mint)) {
-        depositPosition = oldDeposit;
+        depositPosition = { ...oldDeposit };
       }
     }
     let reserve: KaminoReserve | undefined = undefined;
