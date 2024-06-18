@@ -26,7 +26,6 @@ import {
   ConfigParams,
   DefaultConfigParams,
   borrow,
-  bufferToNumberArray,
   createLookupTable,
   createMarketWithTwoReserves,
   deposit,
@@ -262,9 +261,6 @@ describe('Main lending market instruction tests', function () {
     console.log(createMarketSig);
     await sleep(2000);
 
-    await updateMarketElevationGroup(env, lendingMarket.publicKey);
-    await sleep(2000);
-
     const usdh = await createMint(env.provider, env.admin.publicKey, 6);
     await sleep(2000);
     const [, usdhReserve] = await createReserve(env, lendingMarket.publicKey, usdh);
@@ -273,11 +269,18 @@ describe('Main lending market instruction tests', function () {
     const [, solReserve] = await createReserve(env, lendingMarket.publicKey, NATIVE_MINT);
     await sleep(2000);
 
+    await updateMarketElevationGroup(env, lendingMarket.publicKey, usdhReserve.publicKey);
+    await sleep(2000);
+
+    const borrowLimitAgainstThisCollateralInElevationGroup = [...Array(32)].map(() => new BN(0));
+    borrowLimitAgainstThisCollateralInElevationGroup[0] = new BN(1000000000);
+
     await updateReserve(
       env,
       solReserve.publicKey,
       new ReserveConfig({
         ...makeReserveConfig(depositSymbol),
+        borrowLimitAgainstThisCollateralInElevationGroup,
         elevationGroups: [1, 0, 0, 0, 0],
       })
     );
@@ -999,6 +1002,7 @@ describe('Main lending market instruction tests', function () {
     await deposit(env, kaminoMarket, newDepositor, borrowSymbol, new Decimal(1));
 
     let solReserve = kaminoMarket.getReserveBySymbol('SOL');
+    let usdhReserve = kaminoMarket.getReserveBySymbol('USDH');
     await kaminoMarket.reloadSingleReserve(solReserve!.address);
 
     {
@@ -1036,12 +1040,7 @@ describe('Main lending market instruction tests', function () {
       const buffer = Buffer.alloc(32);
       buffer.writeBigUint64LE(BigInt(200), 0);
 
-      await updateReserveSingleValue(
-        env,
-        solReserve!,
-        bufferToNumberArray(buffer),
-        UpdateConfigMode.UpdateBorrowFactor.discriminator + 1
-      );
+      await updateReserveSingleValue(env, solReserve!, buffer, UpdateConfigMode.UpdateBorrowFactor.discriminator + 1);
 
       await kaminoMarket.reloadSingleReserve(solReserve!.address);
       solReserve = kaminoMarket.getReserveBySymbol('SOL');
@@ -1067,7 +1066,7 @@ describe('Main lending market instruction tests', function () {
       await updateReserveSingleValue(
         env,
         solReserve!,
-        bufferToNumberArray(buffer),
+        buffer,
         UpdateConfigMode.UpdateDisableUsageAsCollateralOutsideEmode.discriminator + 1
       );
 
@@ -1083,7 +1082,7 @@ describe('Main lending market instruction tests', function () {
       await updateReserveSingleValue(
         env,
         solReserve!,
-        bufferToNumberArray(buffer),
+        buffer,
         UpdateConfigMode.UpdateDisableUsageAsCollateralOutsideEmode.discriminator + 1
       );
     }
@@ -1137,12 +1136,7 @@ describe('Main lending market instruction tests', function () {
         const buffer = Buffer.alloc(32);
         buffer.writeBigUint64LE(BigInt(borrowAmount.sub(new BN(1)).toString()), 0);
 
-        await updateReserveSingleValue(
-          env,
-          solReserve!,
-          bufferToNumberArray(buffer),
-          UpdateConfigMode.UpdateBorrowLimit.discriminator + 1
-        );
+        await updateReserveSingleValue(env, solReserve!, buffer, UpdateConfigMode.UpdateBorrowLimit.discriminator + 1);
 
         await kaminoMarket.reloadSingleReserve(solReserve!.address);
         solReserve = kaminoMarket.getReserveBySymbol('SOL');
@@ -1153,13 +1147,37 @@ describe('Main lending market instruction tests', function () {
         // revert
         buffer.writeBigUint64LE(BigInt(U64_MAX), 0);
 
-        await updateReserveSingleValue(
-          env,
-          solReserve!,
-          bufferToNumberArray(buffer),
-          UpdateConfigMode.UpdateBorrowLimit.discriminator + 1
-        );
+        await updateReserveSingleValue(env, solReserve!, buffer, UpdateConfigMode.UpdateBorrowLimit.discriminator + 1);
       }
+    }
+
+    {
+      // borrow limit outside elevation group
+      const buffer = Buffer.alloc(32);
+      buffer.writeBigUint64LE(BigInt(borrowAmount.add(new BN(1)).toString()), 0);
+
+      await updateReserveSingleValue(
+        env,
+        solReserve!,
+        buffer,
+        UpdateConfigMode.UpdateBorrowLimitOutsideElevationGroup.discriminator + 1
+      );
+
+      await kaminoMarket.reloadSingleReserve(solReserve!.address);
+      solReserve = kaminoMarket.getReserveBySymbol('SOL');
+
+      const maxBorrow = obligation!.getMaxBorrowAmount(kaminoMarket, NATIVE_MINT, currentSlot);
+      assert.ok(maxBorrow.equals(new Decimal(1)));
+
+      // revert
+      buffer.writeBigUint64LE(BigInt(U64_MAX), 0);
+
+      await updateReserveSingleValue(
+        env,
+        solReserve!,
+        buffer,
+        UpdateConfigMode.UpdateBorrowLimitOutsideElevationGroup.discriminator + 1
+      );
     }
 
     {
@@ -1177,9 +1195,28 @@ describe('Main lending market instruction tests', function () {
     }
 
     {
-      // elevation group increases borrow power
       obligation = await kaminoMarket.getObligationByWallet(depositor.publicKey, new VanillaObligation(PROGRAM_ID));
-      const maxBorrowBefore = obligation!.getMaxBorrowAmount(kaminoMarket, NATIVE_MINT, currentSlot);
+
+      // Update elevation group borrow limit against this collateral
+      const buffer = Buffer.alloc(32 * 8);
+      buffer.writeBigUint64LE(
+        BigInt(obligation!.getBorrowByMint(NATIVE_MINT)!.amount.add(2).toDecimalPlaces(0).toString()),
+        0
+      );
+
+      await updateReserveSingleValue(
+        env,
+        usdhReserve!,
+        buffer,
+        UpdateConfigMode.UpdateBorrowLimitsInElevationGroupAgainstThisReserve.discriminator + 1
+      );
+
+      await kaminoMarket.reload();
+      usdhReserve = kaminoMarket.getReserveBySymbol('USDH');
+
+      // elevation group increases borrow power
+      const maxBorrowBeforeElevationGroupRaise = obligation!.getMaxBorrowAmount(kaminoMarket, NATIVE_MINT, currentSlot);
+
       // Set elevation group
       const kaminoRequestElevationAction = await KaminoAction.buildRequestElevationGroupTxns(
         kaminoMarket,
@@ -1190,9 +1227,29 @@ describe('Main lending market instruction tests', function () {
 
       await sendTransactionsFromAction(env, kaminoRequestElevationAction, [depositor], []);
 
+      await kaminoMarket.reload();
+      usdhReserve = kaminoMarket.getReserveBySymbol('USDH');
+      obligation = await kaminoMarket.getObligationByWallet(depositor.publicKey, new VanillaObligation(PROGRAM_ID));
+
+      const maxBorrowBeforeElevationCapRaise = obligation!.getMaxBorrowAmount(kaminoMarket, NATIVE_MINT, currentSlot);
+      assert.ok(maxBorrowBeforeElevationCapRaise.equals(1));
+      const newBuffer = Buffer.alloc(32 * 8);
+      newBuffer.writeBigUint64LE(BigInt(U64_MAX), 0);
+
+      await updateReserveSingleValue(
+        env,
+        usdhReserve!,
+        newBuffer,
+        UpdateConfigMode.UpdateBorrowLimitsInElevationGroupAgainstThisReserve.discriminator + 1
+      );
+
+      await kaminoMarket.reload();
+      usdhReserve = kaminoMarket.getReserveBySymbol('USDH');
+      obligation = await kaminoMarket.getObligationByWallet(depositor.publicKey, new VanillaObligation(PROGRAM_ID));
+
       obligation = await kaminoMarket.getObligationByWallet(depositor.publicKey, new VanillaObligation(PROGRAM_ID));
       const maxBorrowAfter = obligation!.getMaxBorrowAmount(kaminoMarket, NATIVE_MINT, currentSlot);
-      assert.ok(maxBorrowAfter > maxBorrowBefore);
+      assert.ok(maxBorrowAfter > maxBorrowBeforeElevationGroupRaise);
 
       assert.ok(
         maxBorrowAfter.equals(
@@ -1229,7 +1286,7 @@ describe('Main lending market instruction tests', function () {
       await updateReserveSingleValue(
         env,
         solReserve!,
-        bufferToNumberArray(buffer),
+        buffer,
         UpdateConfigMode.UpdateBlockBorrowingAboveUtilization.discriminator + 1
       );
 
@@ -1248,7 +1305,7 @@ describe('Main lending market instruction tests', function () {
       await updateReserveSingleValue(
         env,
         solReserve!,
-        bufferToNumberArray(buffer),
+        buffer,
         UpdateConfigMode.UpdateDebtWithdrawalCap.discriminator + 1
       );
 
@@ -1348,7 +1405,7 @@ describe('Main lending market instruction tests', function () {
       await updateReserveSingleValue(
         env,
         depositReserve!,
-        bufferToNumberArray(buffer),
+        buffer,
         UpdateConfigMode.UpdateLoanToValuePct.discriminator + 1
       );
 
@@ -1366,7 +1423,7 @@ describe('Main lending market instruction tests', function () {
       await updateReserveSingleValue(
         env,
         depositReserve!,
-        bufferToNumberArray(buffer),
+        buffer,
         UpdateConfigMode.UpdateLoanToValuePct.discriminator + 1
       );
 
@@ -1376,13 +1433,14 @@ describe('Main lending market instruction tests', function () {
     {
       // Withdraw max sol
       await deposit(env, kaminoMarket, newDepositor, borrowSymbol, borrowSolAmount); // add more liquidity
+      await deposit(env, kaminoMarket, depositor, depositSymbol, new Decimal(100)); // add more USDH liquidity to withdraw SOL fully
 
       await kaminoMarket.reload();
       obligation = await kaminoMarket.getObligationByWallet(depositor.publicKey, new VanillaObligation(PROGRAM_ID));
       const solPosition = obligation!.getDepositByMint(NATIVE_MINT)!.amount;
 
       const maxSolWithdraw = obligation!.getMaxWithdrawAmount(kaminoMarket, NATIVE_MINT, currentSlot);
-      assert.ok(solPosition.gt(maxSolWithdraw));
+      assert.ok(solPosition.eq(maxSolWithdraw));
 
       const kaminoWithdrawAction = await KaminoAction.buildWithdrawTxns(
         kaminoMarket,
@@ -1396,6 +1454,19 @@ describe('Main lending market instruction tests', function () {
     }
 
     {
+      obligation = await kaminoMarket.getObligationByWallet(depositor.publicKey, new VanillaObligation(PROGRAM_ID));
+
+      // Update elevation group borrow limit against this collateral
+      const buffer = Buffer.alloc(32 * 8);
+      buffer.writeBigUint64LE(BigInt(200_000_000_000), 0);
+
+      await updateReserveSingleValue(
+        env,
+        depositReserve!,
+        buffer,
+        UpdateConfigMode.UpdateBorrowLimitsInElevationGroupAgainstThisReserve.discriminator + 1
+      );
+
       // elevation group
       const kaminoRequestElevationAction = await KaminoAction.buildRequestElevationGroupTxns(
         kaminoMarket,

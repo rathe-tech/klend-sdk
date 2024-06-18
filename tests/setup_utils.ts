@@ -34,6 +34,7 @@ import {
   referrerTokenStatePda,
   sleep,
   toJson,
+  U64_MAX,
   VanillaObligation,
 } from '../src';
 import {
@@ -256,9 +257,11 @@ export const makeReserveConfig = (tokenName: string, params: ConfigParams = Defa
     deleveragingThresholdSlotsPerBps: new BN(7200), // 0.01% per hour
     multiplierTagBoost: Array(8).fill(1),
     disableUsageAsCollOutsideEmode: 0,
+    borrowLimitOutsideElevationGroup: new BN(U64_MAX),
+    borrowLimitAgainstThisCollateralInElevationGroup: [...Array(32)].map(() => new BN(0)),
     utilizationLimitBlockBorrowingAbove: 0,
-    reserved0: Array(2).fill(0),
-    reserved1: Array(4).fill(0),
+    hostFixedInterestRateBps: 0,
+    reserved1: Array(3).fill(0),
   };
   return new ReserveConfig(reserveConfig);
 };
@@ -389,13 +392,15 @@ export const makeMockOracleConfig = (tokenName: string, params: ConfigParams = D
     }),
     deleveragingMarginCallPeriodSecs: new BN(259200), // 3 days
     borrowFactorPct: new BN(100),
-    elevationGroups: [0, 0, 0, 0, 0],
+    elevationGroups: [...Array(20)].map(() => 0),
     utilizationLimitBlockBorrowingAbove: 0,
     deleveragingThresholdSlotsPerBps: new BN(7200), // 0.01% per hour
     multiplierTagBoost: Array(8).fill(0),
     disableUsageAsCollOutsideEmode: 0,
-    reserved0: Array(2).fill(0),
-    reserved1: Array(4).fill(0),
+    borrowLimitOutsideElevationGroup: new BN(10_000_000_000_000),
+    borrowLimitAgainstThisCollateralInElevationGroup: [...Array(32)].map(() => new BN(0)),
+    hostFixedInterestRateBps: 0,
+    reserved1: Array(3).fill(0),
   };
   return new ReserveConfig(reserveConfig);
 };
@@ -518,11 +523,6 @@ export const createMarketWithTwoReserves = async (
   const [createMarketSig, lendingMarket] = await createMarket(env);
   console.log(createMarketSig);
 
-  if (requestElevationGroup) {
-    await sleep(1000);
-    await updateMarketElevationGroup(env, lendingMarket.publicKey);
-  }
-
   await updateMarketMultiplierPoints(env, lendingMarket.publicKey, 1);
 
   const [firstMint, secondMint] = await Promise.all([
@@ -535,6 +535,11 @@ export const createMarketWithTwoReserves = async (
     createReserve(env, lendingMarket.publicKey, firstMint),
     createReserve(env, lendingMarket.publicKey, secondMint),
   ]);
+
+  if (requestElevationGroup) {
+    await sleep(1000);
+    await updateMarketElevationGroup(env, lendingMarket.publicKey, secondReserve.publicKey);
+  }
 
   const extraParams: ConfigParams = requestElevationGroup
     ? {

@@ -1086,31 +1086,34 @@ export class KaminoAction {
 
   addBorrowIx() {
     this.lendingIxsLabels.push(`borrowObligationLiquidity`);
-    this.lendingIxs.push(
-      borrowObligationLiquidity(
-        {
-          liquidityAmount: this.amount,
-        },
-        {
-          owner: this.owner,
-          obligation: this.getObligationPda(),
-          lendingMarket: this.kaminoMarket.getAddress(),
-          lendingMarketAuthority: this.kaminoMarket.getLendingMarketAuthority(),
-          borrowReserve: this.reserve.address,
-          reserveSourceLiquidity: this.reserve.state.liquidity.supplyVault,
-          userDestinationLiquidity: this.userTokenAccountAddress,
-          borrowReserveLiquidityFeeReceiver: this.reserve.state.liquidity.feeVault,
-          referrerTokenState: referrerTokenStatePda(
-            this.referrer,
-            this.reserve.address,
-            this.kaminoMarket.programId
-          )[0],
-          tokenProgram: TOKEN_PROGRAM_ID,
-          instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
-        },
-        this.kaminoMarket.programId
-      )
+
+    const depositReservesList = this.getAdditionalDepositReservesList();
+
+    const depositReserveAccountMetas = depositReservesList.map((reserve) => {
+      return { pubkey: reserve, isSigner: false, isWritable: true };
+    });
+
+    const borrowIx = borrowObligationLiquidity(
+      {
+        liquidityAmount: this.amount,
+      },
+      {
+        owner: this.owner,
+        obligation: this.getObligationPda(),
+        lendingMarket: this.kaminoMarket.getAddress(),
+        lendingMarketAuthority: this.kaminoMarket.getLendingMarketAuthority(),
+        borrowReserve: this.reserve.address,
+        reserveSourceLiquidity: this.reserve.state.liquidity.supplyVault,
+        userDestinationLiquidity: this.userTokenAccountAddress,
+        borrowReserveLiquidityFeeReceiver: this.reserve.state.liquidity.feeVault,
+        referrerTokenState: referrerTokenStatePda(this.referrer, this.reserve.address, this.kaminoMarket.programId)[0],
+        tokenProgram: TOKEN_PROGRAM_ID,
+        instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
+      },
+      this.kaminoMarket.programId
     );
+    borrowIx.keys = borrowIx.keys.concat([...depositReserveAccountMetas]);
+    this.lendingIxs.push(borrowIx);
   }
 
   async addDepositAndBorrowIx() {
@@ -1151,31 +1154,41 @@ export class KaminoAction {
       throw new Error(`outflowAmount not set`);
     }
 
-    this.lendingIxs.push(
-      borrowObligationLiquidity(
-        {
-          liquidityAmount: this.outflowAmount,
-        },
-        {
-          owner: this.owner,
-          obligation: this.getObligationPda(),
-          lendingMarket: this.kaminoMarket.getAddress(),
-          lendingMarketAuthority: this.kaminoMarket.getLendingMarketAuthority(),
-          borrowReserve: this.outflowReserve.address,
-          reserveSourceLiquidity: this.outflowReserve.state.liquidity.supplyVault,
-          userDestinationLiquidity: this.additionalTokenAccountAddress,
-          borrowReserveLiquidityFeeReceiver: this.outflowReserve.state.liquidity.feeVault,
-          referrerTokenState: referrerTokenStatePda(
-            this.referrer,
-            this.outflowReserve.address,
-            this.kaminoMarket.programId
-          )[0],
-          tokenProgram: TOKEN_PROGRAM_ID,
-          instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
-        },
-        this.kaminoMarket.programId
-      )
+    const depositReservesList = this.getAdditionalDepositReservesList();
+    if (depositReservesList.length === 0) {
+      depositReservesList.push(this.reserve.address);
+    }
+    const depositReserveAccountMetas = depositReservesList.map((reserve) => {
+      return { pubkey: reserve, isSigner: false, isWritable: true };
+    });
+
+    const borrowIx = borrowObligationLiquidity(
+      {
+        liquidityAmount: this.outflowAmount,
+      },
+      {
+        owner: this.owner,
+        obligation: this.getObligationPda(),
+        lendingMarket: this.kaminoMarket.getAddress(),
+        lendingMarketAuthority: this.kaminoMarket.getLendingMarketAuthority(),
+        borrowReserve: this.outflowReserve.address,
+        reserveSourceLiquidity: this.outflowReserve.state.liquidity.supplyVault,
+        userDestinationLiquidity: this.additionalTokenAccountAddress,
+        borrowReserveLiquidityFeeReceiver: this.outflowReserve.state.liquidity.feeVault,
+        referrerTokenState: referrerTokenStatePda(
+          this.referrer,
+          this.outflowReserve.address,
+          this.kaminoMarket.programId
+        )[0],
+        tokenProgram: TOKEN_PROGRAM_ID,
+        instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
+      },
+      this.kaminoMarket.programId
     );
+
+    borrowIx.keys = borrowIx.keys.concat([...depositReserveAccountMetas]);
+
+    this.lendingIxs.push(borrowIx);
   }
 
   async addRepayAndWithdrawIxs() {
@@ -1284,24 +1297,32 @@ export class KaminoAction {
     this.lendingIxsLabels.push(
       `repayObligationLiquidity(reserve=${this.reserve.address})(obligation=${this.getObligationPda()})`
     );
-    this.lendingIxs.push(
-      repayObligationLiquidity(
-        {
-          liquidityAmount: this.amount,
-        },
-        {
-          owner: this.payer,
-          obligation: this.getObligationPda(),
-          lendingMarket: this.kaminoMarket.getAddress(),
-          repayReserve: this.reserve.address,
-          userSourceLiquidity: this.userTokenAccountAddress,
-          reserveDestinationLiquidity: this.reserve.state.liquidity.supplyVault,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
-        },
-        this.kaminoMarket.programId
-      )
+
+    const depositReservesList = this.getAdditionalDepositReservesList();
+
+    const depositReserveAccountMetas = depositReservesList.map((reserve) => {
+      return { pubkey: reserve, isSigner: false, isWritable: true };
+    });
+
+    const repayIx = repayObligationLiquidity(
+      {
+        liquidityAmount: this.amount,
+      },
+      {
+        owner: this.payer,
+        obligation: this.getObligationPda(),
+        lendingMarket: this.kaminoMarket.getAddress(),
+        repayReserve: this.reserve.address,
+        userSourceLiquidity: this.userTokenAccountAddress,
+        reserveDestinationLiquidity: this.reserve.state.liquidity.supplyVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
+      },
+      this.kaminoMarket.programId
     );
+    repayIx.keys = repayIx.keys.concat([...depositReserveAccountMetas]);
+
+    this.lendingIxs.push(repayIx);
   }
 
   async addLiquidateIx(maxAllowedLtvOverridePercent: number = 0) {
@@ -1313,36 +1334,40 @@ export class KaminoAction {
       throw Error(`Liquidating token account address is not defined`);
     }
 
-    this.lendingIxs.push(
-      liquidateObligationAndRedeemReserveCollateral(
-        {
-          liquidityAmount: this.amount,
-          // TODO: Configure this when updating liquidator with new interface
-          minAcceptableReceivedCollateralAmount: this.outflowAmount || new BN(0),
-          // TODO: remove this before going live
-          maxAllowedLtvOverridePercent: new BN(maxAllowedLtvOverridePercent),
-        },
-        {
-          liquidator: this.owner,
-          obligation: this.getObligationPda(),
-          lendingMarket: this.kaminoMarket.getAddress(),
-          lendingMarketAuthority: this.kaminoMarket.getLendingMarketAuthority(),
-          repayReserve: this.reserve.address,
-          repayReserveLiquiditySupply: this.reserve.state.liquidity.supplyVault,
-          withdrawReserve: this.outflowReserve.address,
-          withdrawReserveCollateralMint: this.outflowReserve.getCTokenMint(),
-          withdrawReserveCollateralSupply: this.outflowReserve.state.collateral.supplyVault,
-          withdrawReserveLiquiditySupply: this.outflowReserve.state.liquidity.supplyVault,
-          userSourceLiquidity: this.additionalTokenAccountAddress,
-          userDestinationCollateral: this.userCollateralAccountAddress,
-          userDestinationLiquidity: this.userTokenAccountAddress,
-          withdrawReserveLiquidityFeeReceiver: this.outflowReserve.state.liquidity.feeVault,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
-        },
-        this.kaminoMarket.programId
-      )
+    const depositReservesList = this.getAdditionalDepositReservesList();
+    const depositReserveAccountMetas = depositReservesList.map((reserve) => {
+      return { pubkey: reserve, isSigner: false, isWritable: true };
+    });
+
+    const liquidateIx = liquidateObligationAndRedeemReserveCollateral(
+      {
+        liquidityAmount: this.amount,
+        // TODO: Configure this when updating liquidator with new interface
+        minAcceptableReceivedLiquidityAmount: this.outflowAmount || new BN(0),
+        maxAllowedLtvOverridePercent: new BN(maxAllowedLtvOverridePercent),
+      },
+      {
+        liquidator: this.owner,
+        obligation: this.getObligationPda(),
+        lendingMarket: this.kaminoMarket.getAddress(),
+        lendingMarketAuthority: this.kaminoMarket.getLendingMarketAuthority(),
+        repayReserve: this.reserve.address,
+        repayReserveLiquiditySupply: this.reserve.state.liquidity.supplyVault,
+        withdrawReserve: this.outflowReserve.address,
+        withdrawReserveCollateralMint: this.outflowReserve.getCTokenMint(),
+        withdrawReserveCollateralSupply: this.outflowReserve.state.collateral.supplyVault,
+        withdrawReserveLiquiditySupply: this.outflowReserve.state.liquidity.supplyVault,
+        userSourceLiquidity: this.additionalTokenAccountAddress,
+        userDestinationCollateral: this.userCollateralAccountAddress,
+        userDestinationLiquidity: this.userTokenAccountAddress,
+        withdrawReserveLiquidityFeeReceiver: this.outflowReserve.state.liquidity.feeVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
+      },
+      this.kaminoMarket.programId
     );
+    liquidateIx.keys = liquidateIx.keys.concat([...depositReserveAccountMetas]);
+    this.lendingIxs.push(liquidateIx);
   }
 
   async addInBetweenIxs(
@@ -1731,23 +1756,7 @@ export class KaminoAction {
       this.kaminoMarket.programId
     );
 
-    const depositReservesList = this.depositReserves;
-
-    // check if there's any member in the preloadedDepositReserves that is not in the depositReserves
-    // if so, add it to the depositReserves
-    for (let i = 0; i < this.preLoadedDepositReservesSameTx.length; i++) {
-      const preloadedDepositReserve = this.preLoadedDepositReservesSameTx[i];
-
-      // Check if the depositReserves array contains the current preloadedDepositReserve
-      const found = this.depositReserves.some((depositReserve) => {
-        return depositReserve.equals(preloadedDepositReserve);
-      });
-
-      // If not found, push the current preloadedDepositReserve to the depositReserves array
-      if (!found) {
-        depositReservesList.push(this.preLoadedDepositReservesSameTx[i]);
-      }
-    }
+    const depositReservesList = this.getAdditionalDepositReservesList();
 
     const depositReserveAccountMetas = depositReservesList.map((reserve) => {
       return { pubkey: reserve, isSigner: false, isWritable: true };
@@ -1799,23 +1808,7 @@ export class KaminoAction {
 
     const requestElevationGroupIx = requestElevationGroup(args, accounts, this.kaminoMarket.programId);
 
-    const depositReservesList = this.depositReserves;
-
-    // check if there's any member in the preloadedDepositReserves that is not in the depositReserves
-    // if so, add it to the depositReserves
-    for (let i = 0; i < this.preLoadedDepositReservesSameTx.length; i++) {
-      const preloadedDepositReserveString = this.preLoadedDepositReservesSameTx[i].toString();
-
-      // Check if the depositReserves array contains the current preloadedDepositReserve
-      const found = this.depositReserves.some((depositReserve) => {
-        return depositReserve.toString() === preloadedDepositReserveString;
-      });
-
-      // If not found, push the current preloadedDepositReserve to the depositReserves array
-      if (!found) {
-        depositReservesList.push(this.preLoadedDepositReservesSameTx[i]);
-      }
-    }
+    const depositReservesList = this.getAdditionalDepositReservesList();
 
     const depositReserveAccountMetas = depositReservesList.map((reserve) => {
       return { pubkey: reserve, isSigner: false, isWritable: true };
@@ -2557,5 +2550,27 @@ export class KaminoAction {
     return this.obligation
       ? this.obligation.obligationAddress
       : this.obligationType!.toPda(this.kaminoMarket.getAddress(), this.owner);
+  }
+
+  getAdditionalDepositReservesList(): PublicKey[] {
+    const depositReservesList = this.depositReserves;
+
+    // check if there's any member in the preloadedDepositReserves that is not in the depositReserves
+    // if so, add it to the depositReserves
+    for (let i = 0; i < this.preLoadedDepositReservesSameTx.length; i++) {
+      const preloadedDepositReserve = this.preLoadedDepositReservesSameTx[i];
+
+      // Check if the depositReserves array contains the current preloadedDepositReserve
+      const found = this.depositReserves.some((depositReserve) => {
+        return depositReserve.equals(preloadedDepositReserve);
+      });
+
+      // If not found, push the current preloadedDepositReserve to the depositReserves array
+      if (!found) {
+        depositReservesList.push(this.preLoadedDepositReservesSameTx[i]);
+      }
+    }
+
+    return depositReservesList;
   }
 }
