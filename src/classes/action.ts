@@ -1121,7 +1121,9 @@ export class KaminoAction {
       },
       this.kaminoMarket.programId
     );
-    borrowIx.keys = borrowIx.keys.concat([...depositReserveAccountMetas]);
+    borrowIx.keys = this.obligation?.state.elevationGroup
+      ? borrowIx.keys.concat([...depositReserveAccountMetas])
+      : borrowIx.keys;
     this.lendingIxs.push(borrowIx);
   }
 
@@ -1208,26 +1210,33 @@ export class KaminoAction {
       `repayObligationLiquidity(reserve=${this.reserve!.address})(obligation=${this.getObligationPda()})`
     );
     this.lendingIxsLabels.push(`withdrawObligationCollateralAndRedeemReserveCollateral`);
-    this.lendingIxs.push(
-      repayObligationLiquidity(
-        {
-          liquidityAmount: this.amount,
-        },
-        {
-          owner: this.owner,
-          obligation: this.getObligationPda(),
-          lendingMarket: this.kaminoMarket.getAddress(),
-          repayReserve: this.reserve.address,
-          reserveLiquidityMint: this.reserve.getLiquidityMint(),
-          userSourceLiquidity: this.userTokenAccountAddress,
-          reserveDestinationLiquidity: this.reserve.state.liquidity.supplyVault,
-          tokenProgram: this.reserve.getLiquidityTokenProgram(),
-          instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
-        },
-        this.kaminoMarket.programId
-      )
+
+    const depositReservesList = this.getAdditionalDepositReservesList();
+
+    const depositReserveAccountMetas = depositReservesList.map((reserve) => {
+      return { pubkey: reserve, isSigner: false, isWritable: true };
+    });
+    const repayIx = repayObligationLiquidity(
+      {
+        liquidityAmount: this.amount,
+      },
+      {
+        owner: this.owner,
+        obligation: this.getObligationPda(),
+        lendingMarket: this.kaminoMarket.getAddress(),
+        repayReserve: this.reserve!.address,
+        reserveLiquidityMint: this.reserve.getLiquidityMint(),
+        userSourceLiquidity: this.userTokenAccountAddress,
+        reserveDestinationLiquidity: this.reserve.state.liquidity.supplyVault,
+        tokenProgram: this.reserve.getLiquidityTokenProgram(),
+        instructionSysvarAccount: SYSVAR_INSTRUCTIONS_PUBKEY,
+      },
+      this.kaminoMarket.programId
     );
 
+    repayIx.keys = repayIx.keys.concat([...depositReserveAccountMetas]);
+
+    this.lendingIxs.push(repayIx);
     if (!this.outflowReserve) {
       throw new Error(`outflowReserve not set`);
     }
@@ -1338,7 +1347,9 @@ export class KaminoAction {
       },
       this.kaminoMarket.programId
     );
-    repayIx.keys = repayIx.keys.concat([...depositReserveAccountMetas]);
+
+    repayIx.keys =
+      this.obligation?.state.elevationGroup !== 0 ? repayIx.keys.concat([...depositReserveAccountMetas]) : repayIx.keys;
 
     this.lendingIxs.push(repayIx);
   }
@@ -1388,7 +1399,10 @@ export class KaminoAction {
       },
       this.kaminoMarket.programId
     );
-    liquidateIx.keys = liquidateIx.keys.concat([...depositReserveAccountMetas]);
+    liquidateIx.keys =
+      this.obligation?.state.elevationGroup !== 0
+        ? liquidateIx.keys.concat([...depositReserveAccountMetas])
+        : liquidateIx.keys;
     this.lendingIxs.push(liquidateIx);
   }
 
@@ -1622,7 +1636,10 @@ export class KaminoAction {
         const groupsColl = this.reserve.state.config.elevationGroups;
         const groupsDebt = this.outflowReserve!.state.config.elevationGroups;
         const groups = this.kaminoMarket.state.elevationGroups;
-        const commonElevationGroups = [...groupsColl].filter((item) => groupsDebt.includes(item) && item !== 0);
+        const commonElevationGroups = [...groupsColl].filter(
+          (item) =>
+            groupsDebt.includes(item) && item !== 0 && groups[item - 1].debtReserve.equals(this.outflowReserve!.address)
+        );
 
         console.log(
           'Groups of coll reserve',
@@ -1636,13 +1653,13 @@ export class KaminoAction {
         if (commonElevationGroups.length === 0) {
           console.log('No common elevation groups found, staying with default');
         } else {
-          const eModeGroupWithMaxLtv = commonElevationGroups.reduce((prev, curr) => {
+          const eModeGroupWithMaxLtvAndDebtReserve = commonElevationGroups.reduce((prev, curr) => {
             const prevGroup = groups.find((group) => group.id === prev);
             const currGroup = groups.find((group) => group.id === curr);
             return prevGroup!.ltvPct > currGroup!.ltvPct ? prev : curr;
           });
 
-          const eModeGroup = groups.find((group) => group.id === eModeGroupWithMaxLtv)!.id;
+          const eModeGroup = groups.find((group) => group.id === eModeGroupWithMaxLtvAndDebtReserve)!.id;
           console.log('Setting eModeGroup to', eModeGroup);
 
           if (eModeGroup !== 0 && eModeGroup !== this.obligation?.state.elevationGroup) {
