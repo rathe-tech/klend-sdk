@@ -479,6 +479,7 @@ export const getDepositWithLeverageIxns = async (props: {
     user,
     obligation ? obligation : obligationType,
     0,
+    0,
     false,
     true, // emode
     false, // to be checked and created in a setup tx in the UI
@@ -913,6 +914,7 @@ export const getWithdrawWithLeverageIxns = async (props: {
     user,
     currentSlot,
     userObligation ? userObligation : obligationType,
+    0,
     0,
     false,
     false,
@@ -1382,6 +1384,7 @@ export const getIncreaseLeverageIxns = async (props: {
     user,
     obligation ? obligation : obligationType,
     0,
+    0,
     false,
     false,
     false, // to be checked and create in a setup tx in the UI (won't be the case for adjust anyway as this would be created in deposit)
@@ -1405,6 +1408,7 @@ export const getIncreaseLeverageIxns = async (props: {
     debtTokenMint,
     user,
     obligation ? obligation : obligationType,
+    0,
     0,
     false,
     false,
@@ -1679,6 +1683,7 @@ export const getDecreaseLeverageIxns = async (props: {
     currentSlot,
     undefined,
     0,
+    0,
     false,
     false,
     false, // to be checked and create in a setup tx in the UI (won't be the case for adjust anyway as this would be created in deposit)
@@ -1697,6 +1702,7 @@ export const getDecreaseLeverageIxns = async (props: {
     collTokenMint,
     user,
     obligation ? obligation : obligationType,
+    0,
     0,
     false,
     false,
